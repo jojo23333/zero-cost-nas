@@ -110,6 +110,8 @@ def find_measures(net_orig,                  # neural network
     for k,v in measures_arr.items():
         if k=='jacob_cov':
             measures[k] = v
+        elif k=='l2_norm':
+            measures[k] = torch.norm(torch.stack(v).detach()).item()
         else:
             measures[k] = sum_arr(v)
 

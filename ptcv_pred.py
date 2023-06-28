@@ -23,6 +23,7 @@ from pytorchcv.model_provider import _models as ptcv_models
 from ptcv_nets import ptcv_accs_cf10, ptcv_accs_cf100, ptcv_accs_svhn, ptcv_accs_imgnet
 from foresight.pruners import *
 from foresight.dataset import *
+from torchvision.models.resnet import _resnet, BasicBlock
 
 def get_num_classes(args):
     return 100 if args.dataset == 'cifar100' else 10 if (args.dataset == 'cifar10' or args.dataset=='svhn') else 1000 

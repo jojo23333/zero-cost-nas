@@ -55,7 +55,7 @@ def parse_arguments():
     parser.add_argument('--outfname', default='test',
                         type=str, help='output filename')
     parser.add_argument('--batch_size', default=2048, type=int)
-    parser.add_argument('--epochs', default=40, type=int)
+    parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--init_channels', default=4, type=int)
     parser.add_argument('--img_size', default=8, type=int)
     parser.add_argument('--dataset', type=str, default='cifar10', help='dataset to use [cifar10, cifar100, ImageNet16-120]')
@@ -64,21 +64,27 @@ def parse_arguments():
     parser.add_argument('--dataload', type=str, default='random', help='random or grasp supported')
     parser.add_argument('--dataload_info', type=int, default=1, help='number of batches to use for random dataload or number of samples per class for grasp dataload')
     parser.add_argument('--start', type=int, default=5, help='start index')
-    parser.add_argument('--end', type=int, default=10, help='end index')
-    parser.add_argument('--write_freq', type=int, default=5, help='frequency of write to file')
+    parser.add_argument('--end', type=int, default=10005, help='end index')
+    parser.add_argument('--write_freq', type=int, default=1, help='frequency of write to file')
     parser.add_argument('--logmeasures', action="store_true", default=False, help='add extra logging for predictive measures')
     args = parser.parse_args()
     args.device = torch.device("cuda:"+str(args.gpu) if torch.cuda.is_available() else "cpu")
     return args
 
 
+cnt = 0
 def train_nb2():
     args = parse_arguments()
-    archs = pickle.load(open(args.api_loc,'rb'))
+    print(args.api_loc)
+    archs = torch.load(args.api_loc)['meta_archs']
+    # import ipdb; ipdb.set_trace()
+    # archs = pickle.load(open(args.api_loc,'rb'))
+    from nas_201_api import NASBench201API as API
+    api = API(args.api_loc)
     
     pre='cf' if 'cifar' in args.dataset else 'im'
     if args.outfname == 'test':
-        fn = f'nb2_train_{pre}{get_num_classes(args)}_r{args.img_size}_c{args.init_channels}_e{args.epochs}.p'
+        fn = f'nb2_train_{pre}{get_num_classes(args)}_r{args.img_size}_c{args.init_channels}_e{args.epochs}_l2_norm.p'
     else:
         fn = f'{args.outfname}.p'
     op = os.path.join(args.outdir,fn)
@@ -94,9 +100,14 @@ def train_nb2():
         if i >= args.end:
             break 
 
-        res = {'idx':i, 'arch_str':arch_str, 'logmeasures':[]}
+        info = api.get_more_info(i, 'cifar10-valid' if args.dataset=='cifar10' else args.dataset, iepoch=None, hp='200', is_random=False)
+        res = {'idx':i, 'arch_str':arch_str, 'logmeasures':[], 'stepmeasures':[]}
+        res['trainacc']=info['train-accuracy']
+        res['valacc']=info['valid-accuracy']
+        res['testacc']=info['test-accuracy']
 
-        net = nasbench2.get_model_from_arch_str(arch_str, get_num_classes(args), init_channels=args.init_channels)
+
+        net = nasbench2.get_model_from_arch_str(arch_str, get_num_classes(args))#, init_channels=args.init_channels)
         net.to(args.device)
 
         optimiser, lr_scheduler, train_loader, val_loader = setup_experiment(net, args)
@@ -111,6 +122,14 @@ def train_nb2():
 
         pbar = ProgressBar()
         pbar.attach(trainer)
+        @trainer.on(Events.ITERATION_COMPLETED)
+        def log_step(engine):
+            if engine.state.iteration % 24 == 0:
+                measures = predictive.find_measures(net, 
+                                    train_loader, 
+                                    (args.dataload, args.dataload_info, get_num_classes(args)),
+                                    args.device, measure_names=['l2_norm'])
+                res['stepmeasures'].append(measures)
 
         @trainer.on(Events.EPOCH_COMPLETED)
         def log_epoch(engine):
@@ -169,16 +188,13 @@ def train_nb2():
         res['time'] = etime-stime
 
         #print(res)
+        # import ipdb; ipdb.set_trace()
         cached_res.append(res)
 
         #write to file
         if i % args.write_freq == 0 or i == args.end-1 or i == args.start + 10:
             print(f'writing {len(cached_res)} results to {op}')
-            pf=open(op, 'ab')
-            for cr in cached_res:
-                pickle.dump(cr, pf)
-            pf.close()
-            cached_res = []
+            torch.save(cached_res, op)
 
 if __name__ == '__main__':
     train_nb2()
