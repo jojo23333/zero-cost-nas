@@ -111,7 +111,15 @@ def find_measures(net_orig,                  # neural network
         if k=='jacob_cov':
             measures[k] = v
         elif k=='l2_norm':
-            measures[k] = torch.norm(torch.stack(v).detach()).item()
+            measures['l2_norm'] = torch.norm(torch.stack(v).detach()).item()
+            measures['l2_norm_vec'] = torch.stack(v).detach().cpu().numpy()
+        elif k=='grad_norm':
+            measures['grad_norm'] = sum_arr(v)
+            measures['grad_norm_vec'] = torch.stack([torch.sum(x) for x in v]).detach().cpu().numpy()
+            measures['grad_norm_vec2'] = torch.stack([torch.norm(x) for x in v]).detach().cpu().numpy()
+        elif k in ['matrix_l1_norm', 'matrix_inf_norm']:
+            measures[k] = sum_arr([torch.log(x) for x in v])
+            measures[k+'_vec'] = torch.stack(v).detach().cpu().numpy()
         else:
             measures[k] = sum_arr(v)
 

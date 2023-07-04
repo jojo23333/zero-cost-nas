@@ -19,7 +19,7 @@ import time
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-
+from scipy import stats
 
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.metrics import Accuracy, Loss
@@ -67,6 +67,7 @@ def parse_arguments():
     parser.add_argument('--end', type=int, default=10005, help='end index')
     parser.add_argument('--write_freq', type=int, default=1, help='frequency of write to file')
     parser.add_argument('--logmeasures', action="store_true", default=False, help='add extra logging for predictive measures')
+    parser.add_argument('--logmeasures_freq', type=int, default=20, help='frequency of logging measures')
     args = parser.parse_args()
     args.device = torch.device("cuda:"+str(args.gpu) if torch.cuda.is_available() else "cpu")
     return args
@@ -84,7 +85,7 @@ def train_nb2():
     
     pre='cf' if 'cifar' in args.dataset else 'im'
     if args.outfname == 'test':
-        fn = f'nb2_train_{pre}{get_num_classes(args)}_r{args.img_size}_c{args.init_channels}_e{args.epochs}_l2_norm.p'
+        fn = f'nb2_train_{pre}{get_num_classes(args)}_r{args.img_size}_c{args.init_channels}_e{args.epochs}_spectral_norm.p'
     else:
         fn = f'{args.outfname}.p'
     op = os.path.join(args.outdir,fn)
@@ -124,11 +125,11 @@ def train_nb2():
         pbar.attach(trainer)
         @trainer.on(Events.ITERATION_COMPLETED)
         def log_step(engine):
-            if engine.state.iteration % 24 == 0:
+            if engine.state.iteration % args.logmeasures_freq == 0:
                 measures = predictive.find_measures(net, 
                                     train_loader, 
                                     (args.dataload, args.dataload_info, get_num_classes(args)),
-                                    args.device, measure_names=['l2_norm'])
+                                    args.device, measure_names=['matrix_l1_norm', 'matrix_inf_norm'])
                 res['stepmeasures'].append(measures)
 
         @trainer.on(Events.EPOCH_COMPLETED)
@@ -184,13 +185,27 @@ def train_nb2():
         stime = time.time()
         trainer.run(train_loader, args.epochs)
         etime = time.time()
-
+        
         res['time'] = etime-stime
-
-        #print(res)
-        # import ipdb; ipdb.set_trace()
         cached_res.append(res)
-
+        
+        # Evaluate correlation
+        def eval(archs, name='grad_norm'):
+            gt_accs = [x['testacc'] for x in archs]
+            steps = len(archs[0]['logmeasures'])
+            corrs = []
+            for i in range(steps):
+                if name == 'val_acc':
+                    accs = [x['logmeasures'][i]['val_acc'] for x in archs]
+                else:
+                    accs = [x['stepmeasures'][i][name] for x in archs]
+                tau, p = stats.spearmanr(accs, gt_accs)
+                corrs.append(tau)
+            return corrs
+        # TODO: change correlation name here
+        print('matrix_inf_norm', eval(cached_res, name='matrix_inf_norm'))
+        print('matrix_l1_norm', eval(cached_res, name='matrix_l1_norm'))
+        
         #write to file
         if i % args.write_freq == 0 or i == args.end-1 or i == args.start + 10:
             print(f'writing {len(cached_res)} results to {op}')

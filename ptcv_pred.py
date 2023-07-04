@@ -34,7 +34,7 @@ def parse_arguments():
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--pretrain', type=int, default=0)
     parser.add_argument('--dataset', type=str, default='cifar10', help='dataset to use [cifar10, cifar100, ImageNet16-120]')
-    parser.add_argument('--datadir', type=str, default='_dataset', help='data location')
+    parser.add_argument('--datadir', type=str, default='data', help='data location')
     parser.add_argument('--gpu', type=int, default=0, help='GPU index to work on')
     parser.add_argument('--seed', type=int, default=42, help='pytorch manual seed')
     parser.add_argument('--num_data_workers', type=int, default=2, help='number of workers for dataloaders')

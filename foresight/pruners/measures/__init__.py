@@ -56,6 +56,8 @@ def load_all():
     from . import plain
     from . import synflow
     from . import l2_norm
+    from . import matrix_l1_norm
+    from . import matrix_inf_norm
 
 
 # TODO: should we do that by default?
